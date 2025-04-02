@@ -585,49 +585,146 @@
       textAlign(CENTER);
       text("Store:", GRID_WIDTH * GRID_SIZE + 125, 520);
       
-      if (inStoreMode) {
-        fill(100, 255, 100, 100);
-        rect(GRID_WIDTH * GRID_SIZE + 20, 530, 210, 30);
-      }
-      
       // Buy seeds buttons
       y = 550;
       textAlign(LEFT);
       textSize(14);
       
-      for (let i = 0; i < SEEDS.length; i++) {
-        const seed = SEEDS[i];
+      // If in store mode, draw a fancy store interface
+      if (inStoreMode) {
+        // Draw store overlay
+        fill(0, 0, 0, 150);
+        rect(0, 0, width, height);
         
-        if (inStoreMode && storeSelected === i) {
-          // Highlight selected seed in store
-          fill(100, 150, 200, 100);
+        // Draw store window
+        fill(139, 69, 19); // Brown background
+        rect(width/2 - 200, height/2 - 250, 400, 500, 10);
+        
+        // Store border
+        strokeWeight(4);
+        stroke(101, 67, 33);
+        noFill();
+        rect(width/2 - 200, height/2 - 250, 400, 500, 10);
+        noStroke();
+        
+        // Store title
+        fill(255);
+        textSize(24);
+        textAlign(CENTER);
+        text("GARDEN SHOP", width/2, height/2 - 210);
+        
+        // Coins display
+        fill(255, 255, 0);
+        circle(width/2 - 100, height/2 - 170, 30);
+        fill(255);
+        textAlign(LEFT);
+        textSize(20);
+        text("Your coins: " + coins, width/2 - 80, height/2 - 165);
+        
+        // Instructions
+        fill(255);
+        textSize(16);
+        textAlign(CENTER);
+        text("↑/↓: Select   SPACE: Buy   E: Exit", width/2, height/2 - 130);
+        
+        // Divider
+        stroke(255, 255, 255, 100);
+        strokeWeight(2);
+        line(width/2 - 180, height/2 - 110, width/2 + 180, height/2 - 110);
+        noStroke();
+        
+        // Draw each seed item
+        textAlign(LEFT);
+        let itemY = height/2 - 80;
+        
+        for (let i = 0; i < SEEDS.length; i++) {
+          const seed = SEEDS[i];
+          
+          // Item background
+          if (storeSelected === i) {
+            // Selected item highlight
+            fill(255, 255, 255, 40);
+            rect(width/2 - 180, itemY - 15, 360, 60, 5);
+            
+            // Selection indicator
+            fill(255, 255, 0);
+            textSize(24);
+            text("►", width/2 - 180, itemY + 15);
+          }
+          
+          // Seed display
+          fill(seed.color);
+          circle(width/2 - 130, itemY + 15, 30);
+          
+          // Plant visualization next to seed
+          stroke(50, 150, 50);
+          strokeWeight(2);
+          line(width/2 - 100, itemY + 25, width/2 - 100, itemY + 40);
+          noStroke();
+          
+          // Small version of fruit
+          fill(seed.color);
+          circle(width/2 - 100, itemY, 15);
+          
+          // Seed details
+          fill(255);
+          textSize(18);
+          text(seed.name, width/2 - 70, itemY + 10);
+          
+          // Growth time info based on season
+          textSize(14);
+          const adjustedTime = Math.round(seed.growthTime * getSeasonalGrowthFactor() / 60);
+          text("Growth time: " + adjustedTime + " seconds", width/2 - 70, itemY + 30);
+          
+          // Value
+          fill(255, 255, 0);
+          textSize(16);
+          text("Value: " + seed.value + " coins", width/2 + 70, itemY + 10);
+          
+          // Cost button
+          fill(101, 67, 33);
+          rect(width/2 + 100, itemY, 80, 30, 5);
+          
+          // Enough coins?
+          if (coins >= seed.cost) {
+            fill(255, 255, 0);
+          } else {
+            fill(150, 150, 150);
+          }
+          textAlign(CENTER);
+          text(seed.cost + " coins", width/2 + 140, itemY + 20);
+          textAlign(LEFT);
+          
+          itemY += 80;
+        }
+      } else {
+        // Regular store display when not in store mode
+        for (let i = 0; i < SEEDS.length; i++) {
+          const seed = SEEDS[i];
+          
+          // Button
+          fill(100, 100, 100);
           rect(GRID_WIDTH * GRID_SIZE + 20, y - 15, 210, 30);
+          
+          // Seed color
+          fill(seed.color);
+          circle(GRID_WIDTH * GRID_SIZE + 40, y, 15);
+          
+          // Seed name and cost
+          fill(255);
+          text(seed.name, GRID_WIDTH * GRID_SIZE + 60, y + 5);
+          
+          fill(255, 255, 0);
+          text(seed.cost + " coins", GRID_WIDTH * GRID_SIZE + 180, y + 5);
+          
+          y += 40;
         }
         
-        // Button
-        fill(100, 100, 100);
-        rect(GRID_WIDTH * GRID_SIZE + 20, y - 15, 210, 30);
-        
-        // Seed color
-        fill(seed.color);
-        circle(GRID_WIDTH * GRID_SIZE + 40, y, 15);
-        
-        // Seed name and cost
-        fill(255);
-        text(seed.name, GRID_WIDTH * GRID_SIZE + 60, y + 5);
-        
-        fill(255, 255, 0);
-        text(seed.cost + " coins", GRID_WIDTH * GRID_SIZE + 180, y + 5);
-        
-        y += 40;
-      }
-      
-      // Store instructions if in store mode
-      if (inStoreMode) {
+        // Instructions for entering store
         fill(255);
         textSize(14);
         textAlign(CENTER);
-        text("Up/Down: Select, Space: Buy, E: Exit", GRID_WIDTH * GRID_SIZE + 125, y + 20);
+        text("Press E to enter store", GRID_WIDTH * GRID_SIZE + 125, y + 20);
       }
     }
     
