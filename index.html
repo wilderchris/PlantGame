@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pixel Garden - A p5.js Gardening Game</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.7.0/p5.js"></script>
+  <style>
+    body {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #333;
+    }
+    canvas {
+      border: 2px solid #fff;
+    }
+  </style>
+</head>
+<body>
+  <script>
+    // Game variables
+    let player;
+    let plots = [];
+    let inventory = [];
+    let coins = 100;
+    let selectedSeed = null;
+    let season = "spring";
+    let seasonTimer = 0;
+    let seasonDuration = 600; // 10 seconds per season
+    let pests = [];
+    let particles = [];
+    
+    // Constants
+    const GRID_SIZE = 40;
+    const PLOT_SIZE = 30;
+    const GRID_WIDTH = 10;
+    const GRID_HEIGHT = 8;
+    const PLAYER_SPEED = 3;
+    
+    // Seed types
+    const SEEDS = [
+      { name: "Tomato", cost: 10, growthTime: 300, value: 25, color: [255, 50, 50] },
+      { name: "Carrot", cost: 5, growthTime: 200, value: 15, color: [255, 150, 0] },
+      { name: "Sunflower", cost: 15, growthTime: 400, value: 35, color: [255, 255, 0] }
+    ];
+    
+    function setup() {
+      createCanvas(GRID_WIDTH * GRID_SIZE + 200, GRID_HEIGHT * GRID_SIZE);
+      
+      // Create player
+      player = {
+        x: width / 2,
+        y: height / 2,
+        size: 16,
+        speed: PLAYER_SPEED,
+        direction: 'down',
+        walkFrame: 0,
+        walkTimer: 0
+      };
+      
+      // Create garden plots
+      for (let x = 0; x < GRID_WIDTH; x++) {
+        for (let y = 0; y < GRID_HEIGHT; y++) {
+          plots.push({
+            x: x * GRID_SIZE + GRID_SIZE/2,
+            y: y * GRID_SIZE + GRID_SIZE/2,
+            size: PLOT_SIZE,
+            hasPlant: false,
+            plant: null
+          });
+        }
+      }
+      
+      // Initial inventory
+      inventory = [
+        { type: SEEDS[0], quantity: 5 },
+        { type: SEEDS[1], quantity: 5 }
+      ];
+      
+      // Select first seed by default
+      selectedSeed = 0;
+      
+      // Set frame rate
+      frameRate(60);
+    }
+    
+    function draw() {
+      // Clear the canvas
+      background(100, 180, 255); // Sky blue
+      
+      // Draw sun
+      fill(255, 255, 0);
+      noStroke();
+      circle(width - 50, 50, 40);
+      
+      // Update season
+      updateSeason();
+      
+      // Draw plots
+      drawPlots();
+      
+      // Update and draw plants
+      updatePlants();
+      
+      // Draw player
+      drawPlayer();
+      
+      // Update and draw pests
+      updatePests();
+      
+      // Update and draw particles
+      updateParticles();
+      
+      // Draw UI
+      drawUI();
+      
+      // Handle player movement
+      movePlayer();
+    }
+    
+    function drawPlots() {
+      // Draw dirt background
+      fill(139, 69, 19); // Brown
+      noStroke();
+      rect(0, 0, GRID_WIDTH * GRID_SIZE, GRID_HEIGHT * GRID_SIZE);
+      
+      // Draw individual plots
+      for (let plot of plots) {
+        // Darker soil for tilled plots
+        fill(101, 67, 33);
+        noStroke();
+        rect(plot.x - plot.size/2, plot.y - plot.size/2, plot.size, plot.size);
+        
+        // Grid lines
+        stroke(160, 82, 45, 100);
+        strokeWeight(1);
+        noFill();
+        rect(plot.x - GRID_SIZE/2, plot.y - GRID_SIZE/2, GRID_SIZE, GRID_SIZE);
+      }
+    }
+    
+    function drawPlayer() {
+      player.walkTimer++;
+      if (player.walkTimer > 10) {
+        player.walkFrame = (player.walkFrame + 1) % 2;
+        player.walkTimer = 0;
+      }
+      
+      push();
+      translate(player.x, player.y);
+      
+      // Draw body
+      noStroke();
+      fill(50, 180, 50); // Green
+      rect(-8, -8, 16, 12);
+      
+      // Draw legs
+      if (player.walkFrame === 0) {
+        rect(-6, 4, 4, 4); // Left leg
+        rect(2, 4, 4, 4);  // Right leg
+      } else {
+        rect(-6, 4, 4, 4);   // Left leg
+        rect(2, 4, 4, 4);    // Right leg
+      }
+      
+      // Draw hat
+      fill(139, 69, 19); // Brown
+      rect(-6, -10, 12, 4);
+      
+      pop();
+    }
+    
+    function movePlayer() {
+      let moved = false;
+      let newX = player.x;
+      let newY = player.y;
+      
+      if (keyIsDown(LEFT_ARROW)) {
+        newX -= player.speed;
+        player.direction = 'left';
+        moved = true;
+      } else if (keyIsDown(RIGHT_ARROW)) {
+        newX += player.speed;
+        player.direction = 'right';
+        moved = true;
+      }
+      
+      if (keyIsDown(UP_ARROW)) {
+        newY -= player.speed;
+        player.direction = 'up';
+        moved = true;
+      } else if (keyIsDown(DOWN_ARROW)) {
+        newY += player.speed;
+        player.direction = 'down';
+        moved = true;
+      }
+      
+      // Check bounds
+      if (newX < player.size/2) newX = player.size/2;
+      if (newX > GRID_WIDTH * GRID_SIZE - player.size/2) newX = GRID_WIDTH * GRID_SIZE - player.size/2;
+      if (newY < player.size/2) newY = player.size/2;
+      if (newY > GRID_HEIGHT * GRID_SIZE - player.size/2) newY = GRID_HEIGHT * GRID_SIZE - player.size/2;
+      
+      player.x = newX;
+      player.y = newY;
+      
+      if (!moved) {
+        player.walkFrame = 0;
+        player.walkTimer = 0;
+      }
+    }
+    
+    function updatePlants() {
+      for (let plot of plots) {
+        if (plot.hasPlant && plot.plant) {
+          // Draw plant based on growth stage
+          const plant = plot.plant;
+          const growthProgress = (frameCount - plant.plantedTime) / (plant.growthTime * getSeasonalGrowthFactor());
+          
+          noStroke();
+          
+          if (growthProgress < 0.33) {
+            // Seed stage
+            fill(100);
+            circle(plot.x, plot.y, 5);
+          } else if (growthProgress < 0.66) {
+            // Sprout stage
+            fill(50, 200, 50);
+            circle(plot.x, plot.y, 10);
+            // Stem
+            stroke(50, 150, 50);
+            strokeWeight(2);
+            line(plot.x, plot.y + 5, plot.x, plot.y + 10);
+          } else if (growthProgress < 1) {
+            // Growing stage
+            fill(50, 200, 50);
+            circle(plot.x, plot.y, 15);
+            // Stem
+            stroke(50, 150, 50);
+            strokeWeight(2);
+            line(plot.x, plot.y + 8, plot.x, plot.y + 15);
+            // Small version of fruit
+            fill(plant.seedType.color);
+            noStroke();
+            circle(plot.x, plot.y - 5, 5);
+          } else {
+            // Mature stage
+            fill(50, 200, 50);
+            circle(plot.x, plot.y, 15);
+            // Stem
+            stroke(50, 150, 50);
+            strokeWeight(2);
+            line(plot.x, plot.y + 8, plot.x, plot.y + 15);
+            // Fruit
+            fill(plant.seedType.color);
+            noStroke();
+            circle(plot.x, plot.y - 5, 10);
+            
+            // Ready to harvest indicator
+            if (sin(frameCount * 0.1) > 0) {
+              noFill();
+              stroke(255, 255, 255, 150);
+              strokeWeight(1);
+              circle(plot.x, plot.y, 25);
+            }
+          }
+          
+          // Draw water level indicator
+          if (plant.waterLevel > 0) {
+            const waterSize = map(plant.waterLevel, 0, 100, 0, 25);
+            noFill();
+            stroke(0, 100, 255, 150);
+            strokeWeight(2);
+            arc(plot.x, plot.y, waterSize, waterSize, PI, TWO_PI);
+          }
+          
+          // Decrease water level over time
+          if (frameCount % 60 === 0 && plant.waterLevel > 0) {
+            plant.waterLevel -= 5;
+          }
+          
+          // Plant grows faster when watered
+          if (plant.waterLevel <= 0 && growthProgress < 1) {
+            plant.growthTime += 1; // Slow growth when dry
+          }
+        }
+      }
+    }
+    
+    function updatePests() {
+      // Randomly spawn pests
+      if (random() < 0.005 && pests.length < 3) {
+        const x = random(GRID_SIZE/2, GRID_WIDTH * GRID_SIZE - GRID_SIZE/2);
+        const y = random(GRID_SIZE/2, GRID_HEIGHT * GRID_SIZE - GRID_SIZE/2);
+        pests.push({
+          x: x,
+          y: y,
+          size: 12,
+          speed: 1.5,
+          targetPlot: null
+        });
+      }
+      
+      // Update and draw pests
+      for (let i = pests.length - 1; i >= 0; i--) {
+        const pest = pests[i];
+        
+        // Find target plant if none
+        if (!pest.targetPlot) {
+          const availablePlots = plots.filter(p => p.hasPlant && p.plant.growthTime);
+          if (availablePlots.length > 0) {
+            pest.targetPlot = random(availablePlots);
+          }
+        }
+        
+        // Move towards target
+        if (pest.targetPlot) {
+          const dx = pest.targetPlot.x - pest.x;
+          const dy = pest.targetPlot.y - pest.y;
+          const dist = sqrt(dx*dx + dy*dy);
+          
+          if (dist > 5) {
+            pest.x += (dx / dist) * pest.speed;
+            pest.y += (dy / dist) * pest.speed;
+          } else {
+            // Damage plant
+            if (pest.targetPlot.hasPlant && random() < 0.1) {
+              pest.targetPlot.plant.growthTime += 20;
+            }
+          }
+        } else {
+          // Random movement if no target
+          pest.x += random(-1, 1);
+          pest.y += random(-1, 1);
+        }
+        
+        // Draw pest
+        fill(150, 0, 0);
+        noStroke();
+        circle(pest.x, pest.y, pest.size);
+        
+        // Draw eyes
+        fill(255);
+        circle(pest.x - 3, pest.y - 2, 4);
+        circle(pest.x + 3, pest.y - 2, 4);
+        
+        fill(0);
+        circle(pest.x - 3, pest.y - 2, 2);
+        circle(pest.x + 3, pest.y - 2, 2);
+        
+        // Check if player is close to pest
+        const playerDist = dist(player.x, player.y, pest.x, pest.y);
+        if (playerDist < 20) {
+          pests.splice(i, 1);
+        }
+      }
+    }
+    
+    function updateParticles() {
+      for (let i = particles.length - 1; i >= 0; i--) {
+        const particle = particles[i];
+        
+        // Update particle
+        particle.y += particle.speed;
+        particle.alpha -= 5;
+        
+        // Draw particle
+        fill(particle.color[0], particle.color[1], particle.color[2], particle.alpha);
+        noStroke();
+        circle(particle.x, particle.y, particle.size);
+        
+        // Remove particle if faded
+        if (particle.alpha <= 0) {
+          particles.splice(i, 1);
+        }
+      }
+    }
+    
+    function updateSeason() {
+      seasonTimer++;
+      
+      if (seasonTimer >= seasonDuration) {
+        seasonTimer = 0;
+        // Cycle through seasons
+        if (season === "spring") {
+          season = "summer";
+        } else if (season === "summer") {
+          season = "fall";
+        } else if (season === "fall") {
+          season = "winter";
+        } else {
+          season = "spring";
+        }
+      }
+    }
+    
+    function getSeasonalGrowthFactor() {
+      // Growth factor based on season
+      if (season === "spring") return 0.8; // Fast growth
+      if (season === "summer") return 1.0; // Normal growth
+      if (season === "fall") return 1.2; // Slower growth
+      if (season === "winter") return 1.5; // Slowest growth
+      return 1.0;
+    }
+    
+    function drawUI() {
+      // UI panel background
+      fill(50, 50, 50, 200);
+      noStroke();
+      rect(GRID_WIDTH * GRID_SIZE, 0, 200, height);
+      
+      // Title
+      fill(255);
+      textSize(18);
+      textAlign(CENTER);
+      text("Pixel Garden", GRID_WIDTH * GRID_SIZE + 100, 30);
+      
+      // Coins
+      fill(255, 255, 0);
+      circle(GRID_WIDTH * GRID_SIZE + 30, 60, 20);
+      fill(255);
+      textAlign(LEFT);
+      textSize(16);
+      text(": " + coins, GRID_WIDTH * GRID_SIZE + 45, 65);
+      
+      // Season
+      fill(255);
+      textSize(14);
+      textAlign(CENTER);
+      text("Season: " + season, GRID_WIDTH * GRID_SIZE + 100, 90);
+      
+      // Instructions
+      fill(200);
+      textSize(12);
+      textAlign(LEFT);
+      text("Arrow Keys: Move", GRID_WIDTH * GRID_SIZE + 20, 120);
+      text("Click: Plant/Water/Harvest", GRID_WIDTH * GRID_SIZE + 20, 140);
+      text("Number Keys: Select Seed", GRID_WIDTH * GRID_SIZE + 20, 160);
+      text("Chase away pests!", GRID_WIDTH * GRID_SIZE + 20, 180);
+      
+      // Inventory title
+      fill(255);
+      textSize(14);
+      textAlign(CENTER);
+      text("Seeds:", GRID_WIDTH * GRID_SIZE + 100, 210);
+      
+      // Inventory
+      textAlign(LEFT);
+      textSize(12);
+      let y = 230;
+      for (let i = 0; i < inventory.length; i++) {
+        const item = inventory[i];
+        if (selectedSeed === i) {
+          // Highlight selected seed
+          fill(100, 150, 200, 100);
+          rect(GRID_WIDTH * GRID_SIZE + 15, y - 15, 170, 25);
+        }
+        
+        // Seed color
+        fill(item.type.color);
+        circle(GRID_WIDTH * GRID_SIZE + 30, y, 10);
+        
+        // Seed name and quantity
+        fill(255);
+        text(item.type.name + " (" + item.quantity + ")", GRID_WIDTH * GRID_SIZE + 45, y + 5);
+        
+        // Seed cost
+        fill(255, 255, 0);
+        text(item.type.cost + " coins", GRID_WIDTH * GRID_SIZE + 140, y + 5);
+        
+        y += 30;
+      }
+      
+      // Store section
+      fill(255);
+      textSize(14);
+      textAlign(CENTER);
+      text("Store:", GRID_WIDTH * GRID_SIZE + 100, y + 20);
+      
+      // Buy seeds buttons
+      y += 40;
+      textAlign(LEFT);
+      textSize(12);
+      
+      for (let i = 0; i < SEEDS.length; i++) {
+        const seed = SEEDS[i];
+        
+        // Button
+        fill(100, 100, 100);
+        rect(GRID_WIDTH * GRID_SIZE + 20, y - 15, 160, 25);
+        
+        // Seed color
+        fill(seed.color);
+        circle(GRID_WIDTH * GRID_SIZE + 35, y, 10);
+        
+        // Seed name and cost
+        fill(255);
+        text(seed.name, GRID_WIDTH * GRID_SIZE + 50, y + 5);
+        
+        fill(255, 255, 0);
+        text(seed.cost + " coins", GRID_WIDTH * GRID_SIZE + 120, y + 5);
+        
+        y += 35;
+      }
+    }
+    
+    function mousePressed() {
+      // Check if mouse is within game grid
+      if (mouseX < GRID_WIDTH * GRID_SIZE && mouseY < GRID_HEIGHT * GRID_SIZE) {
+        // Find the closest plot
+        let closestPlot = null;
+        let closestDist = 999999;
+        
+        for (let plot of plots) {
+          const d = dist(mouseX, mouseY, plot.x, plot.y);
+          if (d < closestDist && d < GRID_SIZE/2) {
+            closestDist = d;
+            closestPlot = plot;
+          }
+        }
+        
+        if (closestPlot) {
+          // Calculate distance between player and plot
+          const playerDist = dist(player.x, player.y, closestPlot.x, closestPlot.y);
+          
+          if (playerDist < GRID_SIZE * 1.5) {
+            if (!closestPlot.hasPlant) {
+              // Plant a seed if one is selected
+              if (selectedSeed !== null && inventory[selectedSeed].quantity > 0) {
+                plantSeed(closestPlot);
+              }
+            } else if (closestPlot.plant) {
+              // Check if plant is ready to harvest
+              const growthProgress = (frameCount - closestPlot.plant.plantedTime) / (closestPlot.plant.growthTime * getSeasonalGrowthFactor());
+              
+              if (growthProgress >= 1) {
+                // Harvest plant
+                harvestPlant(closestPlot);
+              } else {
+                // Water plant
+                waterPlant(closestPlot);
+              }
+            }
+          }
+        }
+      } else if (mouseX > GRID_WIDTH * GRID_SIZE) {
+        // UI interactions
+        
+        // Check seed selection
+        let y = 230;
+        for (let i = 0; i < inventory.length; i++) {
+          if (mouseY >= y - 15 && mouseY <= y + 10) {
+            selectedSeed = i;
+            break;
+          }
+          y += 30;
+        }
+        
+        // Check store buttons
+        y += 40; // Start of store buttons
+        for (let i = 0; i < SEEDS.length; i++) {
+          if (mouseY >= y - 15 && mouseY <= y + 10) {
+            buySeeds(i);
+            break;
+          }
+          y += 35;
+        }
+      }
+    }
+    
+    function plantSeed(plot) {
+      const seedItem = inventory[selectedSeed];
+      
+      // Create plant
+      plot.hasPlant = true;
+      plot.plant = {
+        seedType: seedItem.type,
+        plantedTime: frameCount,
+        growthTime: seedItem.type.growthTime,
+        waterLevel: 0
+      };
+      
+      // Decrease seed count
+      seedItem.quantity--;
+      if (seedItem.quantity <= 0) {
+        inventory.splice(selectedSeed, 1);
+        if (inventory.length > 0) {
+          selectedSeed = 0;
+        } else {
+          selectedSeed = null;
+        }
+      }
+    }
+    
+    function waterPlant(plot) {
+      // Increase water level
+      plot.plant.waterLevel = min(plot.plant.waterLevel + 50, 100);
+      
+      // Create water particles
+      for (let i = 0; i < 5; i++) {
+        particles.push({
+          x: plot.x + random(-10, 10),
+          y: plot.y - 5,
+          size: random(3, 6),
+          speed: random(0.5, 1.5),
+          color: [0, 100, 255],
+          alpha: 200
+        });
+      }
+    }
+    
+    function harvestPlant(plot) {
+      // Give coins based on plant value
+      const value = plot.plant.seedType.value;
+      coins += value;
+      
+      // Clear plot
+      plot.hasPlant = false;
+      plot.plant = null;
+      
+      // Create coin particles
+      for (let i = 0; i < 5; i++) {
+        particles.push({
+          x: plot.x + random(-10, 10),
+          y: plot.y,
+          size: random(3, 6),
+          speed: random(-0.5, -1.5),
+          color: [255, 255, 0],
+          alpha: 200
+        });
+      }
+    }
+    
+    function buySeeds(seedIndex) {
+      const seed = SEEDS[seedIndex];
+      
+      // Check if we have enough coins
+      if (coins >= seed.cost) {
+        // Deduct coins
+        coins -= seed.cost;
+        
+        // Add to inventory or increase quantity
+        let found = false;
+        for (let item of inventory) {
+          if (item.type === seed) {
+            item.quantity++;
+            found = true;
+            break;
+          }
+        }
+        
+        if (!found) {
+          inventory.push({ type: seed, quantity: 1 });
+          if (selectedSeed === null) {
+            selectedSeed = inventory.length - 1;
+          }
+        }
+      }
+    }
+    
+    function keyPressed() {
+      // Number keys to select seeds
+      if (key >= '1' && key <= '9') {
+        const index = parseInt(key) - 1;
+        if (index < inventory.length) {
+          selectedSeed = index;
+        }
+      }
+    }
+  </script>
+</body>
+</html>
