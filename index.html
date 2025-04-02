@@ -26,29 +26,35 @@
     let plots = [];
     let inventory = [];
     let coins = 100;
-    let selectedSeed = null;
+    let selectedSeed = 0;
     let season = "spring";
     let seasonTimer = 0;
     let seasonDuration = 600; // 10 seconds per season
     let pests = [];
     let particles = [];
+    let storeSelected = 0;
+    let inStoreMode = false;
+    let currentAction = "plant"; // "plant", "water", "harvest"
+    let actionMessage = "";
+    let actionMessageTimer = 0;
     
     // Constants
     const GRID_SIZE = 40;
     const PLOT_SIZE = 30;
-    const GRID_WIDTH = 10;
-    const GRID_HEIGHT = 8;
+    const GRID_WIDTH = 15;
+    const GRID_HEIGHT = 12;
     const PLAYER_SPEED = 3;
     
     // Seed types
     const SEEDS = [
       { name: "Tomato", cost: 10, growthTime: 300, value: 25, color: [255, 50, 50] },
       { name: "Carrot", cost: 5, growthTime: 200, value: 15, color: [255, 150, 0] },
-      { name: "Sunflower", cost: 15, growthTime: 400, value: 35, color: [255, 255, 0] }
+      { name: "Sunflower", cost: 15, growthTime: 400, value: 35, color: [255, 255, 0] },
+      { name: "Blueberry", cost: 20, growthTime: 500, value: 45, color: [100, 100, 255] }
     ];
     
     function setup() {
-      createCanvas(GRID_WIDTH * GRID_SIZE + 200, GRID_HEIGHT * GRID_SIZE);
+      createCanvas(GRID_WIDTH * GRID_SIZE + 250, GRID_HEIGHT * GRID_SIZE);
       
       // Create player
       player = {
@@ -58,7 +64,8 @@
         speed: PLAYER_SPEED,
         direction: 'down',
         walkFrame: 0,
-        walkTimer: 0
+        walkTimer: 0,
+        nearestPlot: null
       };
       
       // Create garden plots
@@ -69,7 +76,8 @@
             y: y * GRID_SIZE + GRID_SIZE/2,
             size: PLOT_SIZE,
             hasPlant: false,
-            plant: null
+            plant: null,
+            highlighted: false
           });
         }
       }
@@ -79,9 +87,6 @@
         { type: SEEDS[0], quantity: 5 },
         { type: SEEDS[1], quantity: 5 }
       ];
-      
-      // Select first seed by default
-      selectedSeed = 0;
       
       // Set frame rate
       frameRate(60);
@@ -105,6 +110,9 @@
       // Update and draw plants
       updatePlants();
       
+      // Find nearest plot to player and highlight it
+      updateNearestPlot();
+      
       // Draw player
       drawPlayer();
       
@@ -119,6 +127,15 @@
       
       // Handle player movement
       movePlayer();
+      
+      // Show action message
+      if (actionMessageTimer > 0) {
+        actionMessageTimer--;
+        fill(255);
+        textSize(16);
+        textAlign(CENTER);
+        text(actionMessage, player.x, player.y - 30);
+      }
     }
     
     function drawPlots() {
@@ -139,6 +156,41 @@
         strokeWeight(1);
         noFill();
         rect(plot.x - GRID_SIZE/2, plot.y - GRID_SIZE/2, GRID_SIZE, GRID_SIZE);
+        
+        // Highlight if it's the nearest plot to player
+        if (plot.highlighted) {
+          noFill();
+          stroke(255, 255, 255, 150);
+          strokeWeight(2);
+          rect(plot.x - GRID_SIZE/2, plot.y - GRID_SIZE/2, GRID_SIZE, GRID_SIZE);
+        }
+      }
+    }
+    
+    function updateNearestPlot() {
+      // Reset highlight
+      for (let plot of plots) {
+        plot.highlighted = false;
+      }
+      
+      // Find nearest plot
+      let closestPlot = null;
+      let closestDist = 999999;
+      
+      for (let plot of plots) {
+        const d = dist(player.x, player.y, plot.x, plot.y);
+        if (d < closestDist && d < GRID_SIZE * 1.5) {
+          closestDist = d;
+          closestPlot = plot;
+        }
+      }
+      
+      // Set nearest plot
+      player.nearestPlot = closestPlot;
+      
+      // Highlight nearest plot
+      if (closestPlot) {
+        closestPlot.highlighted = true;
       }
     }
     
@@ -157,18 +209,36 @@
       fill(50, 180, 50); // Green
       rect(-8, -8, 16, 12);
       
-      // Draw legs
+      // Draw legs with animation
       if (player.walkFrame === 0) {
         rect(-6, 4, 4, 4); // Left leg
         rect(2, 4, 4, 4);  // Right leg
       } else {
-        rect(-6, 4, 4, 4);   // Left leg
-        rect(2, 4, 4, 4);    // Right leg
+        rect(-6, 4, 4, 4);   // Left leg forward
+        rect(2, 4, 4, 4);    // Right leg back
       }
       
       // Draw hat
       fill(139, 69, 19); // Brown
       rect(-6, -10, 12, 4);
+      
+      // Draw action indicator
+      textSize(10);
+      textAlign(CENTER);
+      fill(255);
+      if (currentAction === "plant") {
+        text("P", 0, -20);
+      } else if (currentAction === "water") {
+        text("W", 0, -20);
+        
+        // Draw watering can
+        stroke(100, 100, 255);
+        strokeWeight(1);
+        noFill();
+        arc(12, -5, 8, 8, 0, PI);
+      } else if (currentAction === "harvest") {
+        text("H", 0, -20);
+      }
       
       pop();
     }
@@ -178,24 +248,33 @@
       let newX = player.x;
       let newY = player.y;
       
-      if (keyIsDown(LEFT_ARROW)) {
-        newX -= player.speed;
-        player.direction = 'left';
-        moved = true;
-      } else if (keyIsDown(RIGHT_ARROW)) {
-        newX += player.speed;
-        player.direction = 'right';
-        moved = true;
-      }
-      
-      if (keyIsDown(UP_ARROW)) {
-        newY -= player.speed;
-        player.direction = 'up';
-        moved = true;
-      } else if (keyIsDown(DOWN_ARROW)) {
-        newY += player.speed;
-        player.direction = 'down';
-        moved = true;
+      if (!inStoreMode) {
+        if (keyIsDown(LEFT_ARROW)) {
+          newX -= player.speed;
+          player.direction = 'left';
+          moved = true;
+        } else if (keyIsDown(RIGHT_ARROW)) {
+          newX += player.speed;
+          player.direction = 'right';
+          moved = true;
+        }
+        
+        if (keyIsDown(UP_ARROW)) {
+          newY -= player.speed;
+          player.direction = 'up';
+          moved = true;
+        } else if (keyIsDown(DOWN_ARROW)) {
+          newY += player.speed;
+          player.direction = 'down';
+          moved = true;
+        }
+      } else {
+        // Store navigation
+        if (keyIsPressed && keyCode === UP_ARROW && frameCount % 10 === 0) {
+          storeSelected = (storeSelected - 1 + SEEDS.length) % SEEDS.length;
+        } else if (keyIsPressed && keyCode === DOWN_ARROW && frameCount % 10 === 0) {
+          storeSelected = (storeSelected + 1) % SEEDS.length;
+        }
       }
       
       // Check bounds
@@ -355,6 +434,7 @@
         const playerDist = dist(player.x, player.y, pest.x, pest.y);
         if (playerDist < 20) {
           pests.splice(i, 1);
+          showActionMessage("Pest chased away!");
         }
       }
     }
@@ -387,12 +467,16 @@
         // Cycle through seasons
         if (season === "spring") {
           season = "summer";
+          showActionMessage("Summer has arrived!");
         } else if (season === "summer") {
           season = "fall";
+          showActionMessage("Fall has arrived!");
         } else if (season === "fall") {
           season = "winter";
+          showActionMessage("Winter has arrived!");
         } else {
           season = "spring";
+          showActionMessage("Spring has arrived!");
         }
       }
     }
@@ -410,163 +494,219 @@
       // UI panel background
       fill(50, 50, 50, 200);
       noStroke();
-      rect(GRID_WIDTH * GRID_SIZE, 0, 200, height);
+      rect(GRID_WIDTH * GRID_SIZE, 0, 250, height);
       
       // Title
       fill(255);
-      textSize(18);
+      textSize(24);
       textAlign(CENTER);
-      text("Pixel Garden", GRID_WIDTH * GRID_SIZE + 100, 30);
+      text("Pixel Garden", GRID_WIDTH * GRID_SIZE + 125, 40);
       
       // Coins
       fill(255, 255, 0);
-      circle(GRID_WIDTH * GRID_SIZE + 30, 60, 20);
+      circle(GRID_WIDTH * GRID_SIZE + 50, 80, 30);
       fill(255);
       textAlign(LEFT);
-      textSize(16);
-      text(": " + coins, GRID_WIDTH * GRID_SIZE + 45, 65);
+      textSize(20);
+      text(": " + coins, GRID_WIDTH * GRID_SIZE + 70, 85);
       
       // Season
       fill(255);
-      textSize(14);
+      textSize(18);
       textAlign(CENTER);
-      text("Season: " + season, GRID_WIDTH * GRID_SIZE + 100, 90);
+      text("Season: " + season, GRID_WIDTH * GRID_SIZE + 125, 120);
+      
+      // Season effect
+      fill(200);
+      textSize(14);
+      text("Growth: " + getSeasonGrowthText(), GRID_WIDTH * GRID_SIZE + 125, 140);
       
       // Instructions
+      fill(255);
+      textSize(16);
+      textAlign(CENTER, TOP);
+      text("Controls", GRID_WIDTH * GRID_SIZE + 125, 170);
+      
       fill(200);
-      textSize(12);
+      textSize(14);
       textAlign(LEFT);
-      text("Arrow Keys: Move", GRID_WIDTH * GRID_SIZE + 20, 120);
-      text("Click: Plant/Water/Harvest", GRID_WIDTH * GRID_SIZE + 20, 140);
-      text("Number Keys: Select Seed", GRID_WIDTH * GRID_SIZE + 20, 160);
-      text("Chase away pests!", GRID_WIDTH * GRID_SIZE + 20, 180);
+      text("Arrow Keys: Move", GRID_WIDTH * GRID_SIZE + 30, 200);
+      text("Space: Perform Action", GRID_WIDTH * GRID_SIZE + 30, 220);
+      text("Tab: Switch Action", GRID_WIDTH * GRID_SIZE + 30, 240);
+      text("E: Enter/Exit Store", GRID_WIDTH * GRID_SIZE + 30, 260);
+      text("1-4: Select Seed", GRID_WIDTH * GRID_SIZE + 30, 280);
+      
+      // Current action
+      fill(255);
+      textSize(16);
+      textAlign(CENTER);
+      text("Current Action: " + currentAction, GRID_WIDTH * GRID_SIZE + 125, 320);
       
       // Inventory title
       fill(255);
-      textSize(14);
+      textSize(18);
       textAlign(CENTER);
-      text("Seeds:", GRID_WIDTH * GRID_SIZE + 100, 210);
+      text("Seeds:", GRID_WIDTH * GRID_SIZE + 125, 350);
       
       // Inventory
       textAlign(LEFT);
-      textSize(12);
-      let y = 230;
+      textSize(14);
+      let y = 380;
       for (let i = 0; i < inventory.length; i++) {
         const item = inventory[i];
         if (selectedSeed === i) {
           // Highlight selected seed
           fill(100, 150, 200, 100);
-          rect(GRID_WIDTH * GRID_SIZE + 15, y - 15, 170, 25);
+          rect(GRID_WIDTH * GRID_SIZE + 20, y - 15, 210, 30);
         }
         
         // Seed color
         fill(item.type.color);
-        circle(GRID_WIDTH * GRID_SIZE + 30, y, 10);
+        circle(GRID_WIDTH * GRID_SIZE + 40, y, 15);
         
         // Seed name and quantity
         fill(255);
-        text(item.type.name + " (" + item.quantity + ")", GRID_WIDTH * GRID_SIZE + 45, y + 5);
+        text(item.type.name + " (" + item.quantity + ")", GRID_WIDTH * GRID_SIZE + 60, y + 5);
         
         // Seed cost
         fill(255, 255, 0);
-        text(item.type.cost + " coins", GRID_WIDTH * GRID_SIZE + 140, y + 5);
+        text(item.type.cost + " coins", GRID_WIDTH * GRID_SIZE + 180, y + 5);
         
-        y += 30;
+        // Seed number
+        fill(200);
+        text((i+1) + ":", GRID_WIDTH * GRID_SIZE + 20, y + 5);
+        
+        y += 35;
       }
       
       // Store section
       fill(255);
-      textSize(14);
+      textSize(18);
       textAlign(CENTER);
-      text("Store:", GRID_WIDTH * GRID_SIZE + 100, y + 20);
+      text("Store:", GRID_WIDTH * GRID_SIZE + 125, 520);
+      
+      if (inStoreMode) {
+        fill(100, 255, 100, 100);
+        rect(GRID_WIDTH * GRID_SIZE + 20, 530, 210, 30);
+      }
       
       // Buy seeds buttons
-      y += 40;
+      y = 550;
       textAlign(LEFT);
-      textSize(12);
+      textSize(14);
       
       for (let i = 0; i < SEEDS.length; i++) {
         const seed = SEEDS[i];
         
+        if (inStoreMode && storeSelected === i) {
+          // Highlight selected seed in store
+          fill(100, 150, 200, 100);
+          rect(GRID_WIDTH * GRID_SIZE + 20, y - 15, 210, 30);
+        }
+        
         // Button
         fill(100, 100, 100);
-        rect(GRID_WIDTH * GRID_SIZE + 20, y - 15, 160, 25);
+        rect(GRID_WIDTH * GRID_SIZE + 20, y - 15, 210, 30);
         
         // Seed color
         fill(seed.color);
-        circle(GRID_WIDTH * GRID_SIZE + 35, y, 10);
+        circle(GRID_WIDTH * GRID_SIZE + 40, y, 15);
         
         // Seed name and cost
         fill(255);
-        text(seed.name, GRID_WIDTH * GRID_SIZE + 50, y + 5);
+        text(seed.name, GRID_WIDTH * GRID_SIZE + 60, y + 5);
         
         fill(255, 255, 0);
-        text(seed.cost + " coins", GRID_WIDTH * GRID_SIZE + 120, y + 5);
+        text(seed.cost + " coins", GRID_WIDTH * GRID_SIZE + 180, y + 5);
         
-        y += 35;
+        y += 40;
+      }
+      
+      // Store instructions if in store mode
+      if (inStoreMode) {
+        fill(255);
+        textSize(14);
+        textAlign(CENTER);
+        text("Up/Down: Select, Space: Buy, E: Exit", GRID_WIDTH * GRID_SIZE + 125, y + 20);
       }
     }
     
-    function mousePressed() {
-      // Check if mouse is within game grid
-      if (mouseX < GRID_WIDTH * GRID_SIZE && mouseY < GRID_HEIGHT * GRID_SIZE) {
-        // Find the closest plot
-        let closestPlot = null;
-        let closestDist = 999999;
-        
-        for (let plot of plots) {
-          const d = dist(mouseX, mouseY, plot.x, plot.y);
-          if (d < closestDist && d < GRID_SIZE/2) {
-            closestDist = d;
-            closestPlot = plot;
-          }
+    function getSeasonGrowthText() {
+      if (season === "spring") return "Fast";
+      if (season === "summer") return "Normal";
+      if (season === "fall") return "Slow";
+      if (season === "winter") return "Very Slow";
+      return "Normal";
+    }
+    
+    function keyPressed() {
+      // Number keys to select seeds
+      if (key >= '1' && key <= '9') {
+        const index = parseInt(key) - 1;
+        if (index < inventory.length) {
+          selectedSeed = index;
+          showActionMessage("Selected " + inventory[selectedSeed].type.name);
         }
-        
-        if (closestPlot) {
-          // Calculate distance between player and plot
-          const playerDist = dist(player.x, player.y, closestPlot.x, closestPlot.y);
-          
-          if (playerDist < GRID_SIZE * 1.5) {
-            if (!closestPlot.hasPlant) {
-              // Plant a seed if one is selected
-              if (selectedSeed !== null && inventory[selectedSeed].quantity > 0) {
-                plantSeed(closestPlot);
-              }
-            } else if (closestPlot.plant) {
-              // Check if plant is ready to harvest
-              const growthProgress = (frameCount - closestPlot.plant.plantedTime) / (closestPlot.plant.growthTime * getSeasonalGrowthFactor());
-              
-              if (growthProgress >= 1) {
-                // Harvest plant
-                harvestPlant(closestPlot);
-              } else {
-                // Water plant
-                waterPlant(closestPlot);
-              }
-            }
-          }
+      }
+      
+      // Tab to cycle through actions
+      if (keyCode === TAB) {
+        if (currentAction === "plant") {
+          currentAction = "water";
+        } else if (currentAction === "water") {
+          currentAction = "harvest";
+        } else {
+          currentAction = "plant";
         }
-      } else if (mouseX > GRID_WIDTH * GRID_SIZE) {
-        // UI interactions
-        
-        // Check seed selection
-        let y = 230;
-        for (let i = 0; i < inventory.length; i++) {
-          if (mouseY >= y - 15 && mouseY <= y + 10) {
-            selectedSeed = i;
-            break;
-          }
-          y += 30;
+        showActionMessage("Action: " + currentAction);
+        return false; // Prevent default tab behavior
+      }
+      
+      // E to enter/exit store
+      if (key === 'e' || key === 'E') {
+        inStoreMode = !inStoreMode;
+        showActionMessage(inStoreMode ? "Entered store" : "Exited store");
+      }
+      
+      // Space to perform action
+      if (keyCode === 32) { // Space key
+        if (inStoreMode) {
+          buySeeds(storeSelected);
+        } else if (player.nearestPlot) {
+          performAction();
         }
+      }
+    }
+    
+    function performAction() {
+      const plot = player.nearestPlot;
+      
+      if (currentAction === "plant" && !plot.hasPlant) {
+        // Plant a seed if one is selected
+        if (selectedSeed !== null && selectedSeed < inventory.length && inventory[selectedSeed].quantity > 0) {
+          plantSeed(plot);
+        } else {
+          showActionMessage("No seeds selected!");
+        }
+      } else if (currentAction === "water" && plot.hasPlant) {
+        // Water the plant
+        waterPlant(plot);
+      } else if (currentAction === "harvest" && plot.hasPlant) {
+        // Check if plant is ready to harvest
+        const growthProgress = (frameCount - plot.plant.plantedTime) / (plot.plant.growthTime * getSeasonalGrowthFactor());
         
-        // Check store buttons
-        y += 40; // Start of store buttons
-        for (let i = 0; i < SEEDS.length; i++) {
-          if (mouseY >= y - 15 && mouseY <= y + 10) {
-            buySeeds(i);
-            break;
-          }
-          y += 35;
+        if (growthProgress >= 1) {
+          // Harvest plant
+          harvestPlant(plot);
+        } else {
+          showActionMessage("Plant not ready!");
+        }
+      } else {
+        // Invalid action
+        if (currentAction === "plant" && plot.hasPlant) {
+          showActionMessage("Plot already has a plant!");
+        } else if ((currentAction === "water" || currentAction === "harvest") && !plot.hasPlant) {
+          showActionMessage("No plant to " + currentAction + "!");
         }
       }
     }
@@ -593,6 +733,8 @@
           selectedSeed = null;
         }
       }
+      
+      showActionMessage("Planted " + seedItem.type.name);
     }
     
     function waterPlant(plot) {
@@ -610,6 +752,8 @@
           alpha: 200
         });
       }
+      
+      showActionMessage("Watered plant");
     }
     
     function harvestPlant(plot) {
@@ -632,6 +776,8 @@
           alpha: 200
         });
       }
+      
+      showActionMessage("Harvested! +" + value + " coins");
     }
     
     function buySeeds(seedIndex) {
@@ -658,17 +804,16 @@
             selectedSeed = inventory.length - 1;
           }
         }
+        
+        showActionMessage("Bought " + seed.name + " seed");
+      } else {
+        showActionMessage("Not enough coins!");
       }
     }
     
-    function keyPressed() {
-      // Number keys to select seeds
-      if (key >= '1' && key <= '9') {
-        const index = parseInt(key) - 1;
-        if (index < inventory.length) {
-          selectedSeed = index;
-        }
-      }
+    function showActionMessage(message) {
+      actionMessage = message;
+      actionMessageTimer = 120; // Show for 2 seconds
     }
   </script>
 </body>
